@@ -105,9 +105,10 @@ input[type=date].in{font-family:var(--mono);font-size:11.5px;padding:7px 8px}
 /* search form */
 .srch{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) repeat(2,minmax(0,1.15fr)) auto;gap:14px;align-items:start;padding:16px}
 .when{display:grid;gap:6px}
-.when .rw{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center}
-.when .rw2{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:center}
-.when input[type=radio]{accent-color:var(--a);margin:0}
+.when .rw{display:grid;grid-template-columns:15px minmax(0,1fr);gap:8px;align-items:center}
+.when .rw2{display:grid;grid-template-columns:15px minmax(0,1fr) minmax(0,1fr);gap:6px 8px;align-items:center}
+.when .rw2 .in{min-width:0;width:100%}
+.when input[type=radio]{accent-color:var(--a);margin:0;width:15px;height:15px;cursor:pointer}
 .go .gorow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
 /* results */
@@ -429,14 +430,14 @@ function pageSearch() {
           <div class="fld"><label for="r-trader">Trading company</label><input class="in" id="r-trader" type="text" list="dl-tc" autocomplete="off"></div>
           <div class="fld"><span class="lab">Dealing date</span>
             <div class="when">
-              <div class="rw"><input type="radio" name="dd" id="dd-p" value="p" aria-label="Dealing date period">${sel("dd-sel", "yesterday")}</div>
-              <div class="rw2"><input type="radio" name="dd" id="dd-r" value="r" aria-label="Dealing date range"><input class="in" type="date" id="dd-from" aria-label="Dealing date from"><input class="in" type="date" id="dd-to" aria-label="Dealing date to"></div>
+              <div class="rw"><input type="radio" name="dt" id="dd-p" value="dd-p" aria-label="Search by dealing date period">${sel("dd-sel", "yesterday")}</div>
+              <div class="rw2"><input type="radio" name="dt" id="dd-r" value="dd-r" aria-label="Search by dealing date range"><input class="in" type="date" id="dd-from" aria-label="Dealing date from"><input class="in" type="date" id="dd-to" aria-label="Dealing date to"></div>
             </div>
           </div>
           <div class="fld"><span class="lab">Announcement date</span>
             <div class="when">
-              <div class="rw"><input type="radio" name="ad" id="ad-p" value="p" checked aria-label="Announcement date period">${sel("ad-sel", "today")}</div>
-              <div class="rw2"><input type="radio" name="ad" id="ad-r" value="r" aria-label="Announcement date range"><input class="in" type="date" id="ad-from" aria-label="Announcement date from"><input class="in" type="date" id="ad-to" aria-label="Announcement date to"></div>
+              <div class="rw"><input type="radio" name="dt" id="ad-p" value="ad-p" checked aria-label="Search by announcement date period">${sel("ad-sel", "today")}</div>
+              <div class="rw2"><input type="radio" name="dt" id="ad-r" value="ad-r" aria-label="Search by announcement date range"><input class="in" type="date" id="ad-from" aria-label="Announcement date from"><input class="in" type="date" id="ad-to" aria-label="Announcement date to"></div>
             </div>
           </div>
           <div class="fld go"><span class="lab">Class of relevant security</span>
@@ -693,26 +694,29 @@ const R83 = (() => {
   // ---- the search form (server) ----
   function readForm() {
     const val = id => (byId(id).value || "").trim();
-    const ad = byId("ad-r").checked ? [val("ad-from") || null, val("ad-to") || null] : periodRange(byId("ad-sel").value);
-    const ddOn = byId("dd-p").checked || byId("dd-r").checked;
-    const dd = !ddOn ? [null, null] : byId("dd-r").checked ? [val("dd-from") || null, val("dd-to") || null] : periodRange(byId("dd-sel").value);
+    // one choice between dealing date and announcement date, as on the 8.3 Tracker
+    const by = (document.querySelector('input[name="dt"]:checked') || {}).value || "ad-p";
+    const none = [null, null];
+    const ad = by === "ad-p" ? periodRange(byId("ad-sel").value) : by === "ad-r" ? [val("ad-from") || null, val("ad-to") || null] : none;
+    const dd = by === "dd-p" ? periodRange(byId("dd-sel").value) : by === "dd-r" ? [val("dd-from") || null, val("dd-to") || null] : none;
     const cls = (document.querySelector('input[name="cls"]:checked') || {}).value || "all";
     const q = { tg: val("r-dealt"), tc: val("r-trader"), ad, dd, cls,
-      adPeriod: byId("ad-p").checked ? byId("ad-sel").value : null, ddPeriod: ddOn && byId("dd-p").checked ? byId("dd-sel").value : null };
+      by: by[0] === "d" ? "dealt" : "announced",
+      adPeriod: by === "ad-p" ? byId("ad-sel").value : null, ddPeriod: by === "dd-p" ? byId("dd-sel").value : null };
     q.q = q.tg || q.tc;
     return q;
   }
   function describe(q) {
     const span = ([a, b]) => !a && !b ? "" : a && b ? (a === b ? fdl(a) : `${fdy(a)} – ${fdy(b)}`) : a ? `from ${fdy(a)}` : `to ${fdy(b)}`;
     const parts = [];
-    if (q.ad[0] || q.ad[1]) parts.push(`Announced ${q.adPeriod && PERIOD_WORDS[q.adPeriod] ? PERIOD_WORDS[q.adPeriod] + (q.ad[0] === q.ad[1] ? ", " + fdl(q.ad[0]) : "") : span(q.ad)}`);
-    else parts.push("Announced any time");
-    if (q.dd[0] || q.dd[1]) parts.push(`dealt ${q.ddPeriod && PERIOD_WORDS[q.ddPeriod] ? PERIOD_WORDS[q.ddPeriod] + (q.dd[0] === q.dd[1] ? ", " + fdl(q.dd[0]) : "") : span(q.dd)}`);
+    const rng = q.by === "dealt" ? q.dd : q.ad, per = q.by === "dealt" ? q.ddPeriod : q.adPeriod, Verb = q.by === "dealt" ? "Dealt" : "Announced";
+    const when = rng[0] || rng[1] ? (per && PERIOD_WORDS[per] ? PERIOD_WORDS[per] + (rng[0] === rng[1] ? ", " + fdl(rng[0]) : "") : span(rng)) : "";
+    parts.push(when ? `${Verb} ${when}` : "All dates");
     if (q.tg) parts.push(`dealt in “${q.tg}”`);
     if (q.tc) parts.push(`trader “${q.tc}”`);
     if (q.cls !== "all") parts.push(q.cls === "ord" ? "ordinaries" : "other classes");
-    const sub = q.q || q.dd[0] || q.dd[1] ? "Form 8.3s matching the search" : !q.ad[0] && !q.ad[1] ? "Form 8.3s, all announcement dates"
-      : `Form 8.3s announced ${q.adPeriod && PERIOD_WORDS[q.adPeriod] ? PERIOD_WORDS[q.adPeriod] : "in the period"}`;
+    const sub = q.q ? "Form 8.3s matching the search" : !when ? "Form 8.3s, all dates"
+      : `Form 8.3s ${q.by} ${per && PERIOD_WORDS[per] ? PERIOD_WORDS[per] : "in the period"}`;
     return { head: parts.join(" · "), sub };
   }
   async function run() {
@@ -757,12 +761,9 @@ const R83 = (() => {
     if (S.names) fillNames(); else sb.rpc("r83_names").then(({ data }) => { if (data) { S.names = data; fillNames(); } });
     // search form
     byId("sf").addEventListener("submit", e => { e.preventDefault(); run(); });
-    [["dd-sel", "dd-p"], ["ad-sel", "ad-p"]].forEach(([s, p]) => byId(s).addEventListener("change", () => { byId(p).checked = true; }));
-    ["dd-from", "dd-to"].forEach(i => byId(i).addEventListener("input", () => { byId("dd-r").checked = true; }));
-    ["ad-from", "ad-to"].forEach(i => byId(i).addEventListener("input", () => { byId("ad-r").checked = true; }));
-    // clicking a ticked dealing-date radio again unticks it (dealing date is optional)
-    ["dd-p", "dd-r"].forEach(i => { const el = byId(i); el.addEventListener("mousedown", () => { el._was = el.checked; });
-      el.addEventListener("click", () => { if (el._was) el.checked = false; }); });
+    // using a period list or a date box ticks its own option (dealing date OR announcement date, never both)
+    [["dd-sel", "dd-p"], ["ad-sel", "ad-p"], ["dd-from", "dd-r"], ["dd-to", "dd-r"], ["ad-from", "ad-r"], ["ad-to", "ad-r"]].forEach(([f, r]) =>
+      ["mousedown", "change", "input"].forEach(ev => byId(f).addEventListener(ev, () => { byId(r).checked = true; })));
     // results
     byId("r83-types").addEventListener("change", e => { const i = e.target; if (i.hasAttribute("data-all")) F.types.clear(); else if (i.checked) F.types.add(i.value); else F.types.delete(i.value); F.shown = PAGE; draw(); });
     byId("r83-t").addEventListener("click", e => {
